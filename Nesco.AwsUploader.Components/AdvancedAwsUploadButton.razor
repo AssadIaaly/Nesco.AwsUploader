@@ -1,0 +1,400 @@
+﻿@using System.Net.Http.Headers
+@using System.Net.Http.Json
+@inject HttpClient Http
+@inject ILogger<AwsUploadButton> Logger
+
+<div class="aws-upload-button-container">
+    <div class="mb-3">
+        @if (ShowVersionSelector)
+        {
+            <label class="form-label">Upload Method</label>
+            <div>
+                <div class="form-check">
+                    <input class="form-check-input" type="radio" name="@_uploadVersionName" id="@_version1Id"
+                           value="1" @onchange="() => _selectedVersion = UploadVersion.ServerUpload" checked="@(_selectedVersion == UploadVersion.ServerUpload)">
+                    <label class="form-check-label" for="@_version1Id">
+                        Server Upload
+                    </label>
+                    <small class="d-block text-muted">File is uploaded to server, then server uploads to AWS S3</small>
+                </div>
+                <div class="form-check mt-2">
+                    <input class="form-check-input" type="radio" name="@_uploadVersionName" id="@_version2Id"
+                           value="2" @onchange="() => _selectedVersion = UploadVersion.DirectUpload" checked="@(_selectedVersion == UploadVersion.DirectUpload)">
+                    <label class="form-check-label" for="@_version2Id">
+                        Direct Upload (Presigned URL)
+                    </label>
+                    <small class="d-block text-muted">Client uploads directly to AWS S3 using presigned URL</small>
+                </div>
+            </div>
+        }
+    </div>
+
+    <div class="mb-3">
+        <label for="@_fileInputId" class="form-label">@Label</label>
+        <InputFile id="@_fileInputId" OnChange="HandleFileSelected" class="form-control" accept="@Accept" multiple="@AllowMultiple" />
+        @if (!string.IsNullOrEmpty(HelpText))
+        {
+            <small class="form-text text-muted">@HelpText</small>
+        }
+    </div>
+
+    <button class="btn @ButtonClass" @onclick="UploadFile" disabled="@(_selectedFile == null || _isUploading)">
+        @if (_isUploading)
+        {
+            <span class="spinner-border spinner-border-sm me-2" role="status" aria-hidden="true"></span>
+            <span>@UploadingText</span>
+        }
+        else
+        {
+            <span>@ButtonText</span>
+        }
+    </button>
+
+    @if (!string.IsNullOrEmpty(_statusMessage))
+    {
+        <div class="alert @(_isError ? "alert-danger" : "alert-success") mt-3" role="alert">
+            @_statusMessage
+        </div>
+    }
+
+    @if (!string.IsNullOrEmpty(_uploadedFileUrl))
+    {
+        <div class="alert alert-info mt-3" role="alert">
+            <strong>File URL:</strong> <a href="@_uploadedFileUrl" target="_blank">@_uploadedFileUrl</a>
+        </div>
+    }
+</div>
+
+@code {
+    private readonly string _componentId = Guid.NewGuid().ToString("N");
+    private string _uploadVersionName => $"uploadVersion-{_componentId}";
+    private string _version1Id => $"version1-{_componentId}";
+    private string _version2Id => $"version2-{_componentId}";
+    private string _fileInputId => $"fileInput-{_componentId}";
+
+    private UploadVersion _selectedVersion = UploadVersion.ServerUpload;
+    private IBrowserFile? _selectedFile;
+    private bool _isUploading = false;
+    private string? _statusMessage;
+    private string? _uploadedFileUrl;
+    private bool _isError = false;
+
+    /// <summary>
+    /// Upload version to use (ServerUpload or DirectUpload)
+    /// </summary>
+    [Parameter]
+    public UploadVersion Version { get; set; } = UploadVersion.ServerUpload;
+
+    /// <summary>
+    /// Show version selector radio buttons
+    /// </summary>
+    [Parameter]
+    public bool ShowVersionSelector { get; set; } = false;
+
+    /// <summary>
+    /// Button text
+    /// </summary>
+    [Parameter]
+    public string ButtonText { get; set; } = "Upload File";
+
+    /// <summary>
+    /// Text to show while uploading
+    /// </summary>
+    [Parameter]
+    public string UploadingText { get; set; } = "Uploading...";
+
+    /// <summary>
+    /// Button CSS class
+    /// </summary>
+    [Parameter]
+    public string ButtonClass { get; set; } = "btn-primary";
+
+    /// <summary>
+    /// Label for file input
+    /// </summary>
+    [Parameter]
+    public string Label { get; set; } = "Select File";
+
+    /// <summary>
+    /// Help text below file input
+    /// </summary>
+    [Parameter]
+    public string? HelpText { get; set; }
+
+    /// <summary>
+    /// File type filter (e.g., "image/*", ".pdf,.doc")
+    /// </summary>
+    [Parameter]
+    public string? Accept { get; set; }
+
+    /// <summary>
+    /// Allow multiple file selection
+    /// </summary>
+    [Parameter]
+    public bool AllowMultiple { get; set; } = false;
+
+    /// <summary>
+    /// Maximum file size in bytes (default: 5MB)
+    /// </summary>
+    [Parameter]
+    public long MaxFileSize { get; set; } = 5242880; // 5MB
+
+    /// <summary>
+    /// Minimum file size in bytes (default: 0 - no minimum)
+    /// </summary>
+    [Parameter]
+    public long MinFileSize { get; set; } = 0;
+
+    /// <summary>
+    /// Allowed file extensions (e.g., new[] { ".pdf", ".jpg", ".png" }). Leave null for no restriction.
+    /// </summary>
+    [Parameter]
+    public string[]? AllowedExtensions { get; set; }
+
+    /// <summary>
+    /// Maximum number of files when AllowMultiple is true (default: 10)
+    /// </summary>
+    [Parameter]
+    public int MaxFiles { get; set; } = 10;
+
+    /// <summary>
+    /// API endpoint for server upload (default: /api/aws-upload/server)
+    /// </summary>
+    [Parameter]
+    public string ServerUploadEndpoint { get; set; } = "/api/aws-upload/server";
+
+    /// <summary>
+    /// API endpoint for presigned URL (default: /api/aws-upload/presigned-url)
+    /// </summary>
+    [Parameter]
+    public string PresignedUrlEndpoint { get; set; } = "/api/aws-upload/presigned-url";
+
+    /// <summary>
+    /// Optional folder path in S3 (e.g., "documents/invoices")
+    /// </summary>
+    [Parameter]
+    public string? Folder { get; set; }
+
+    /// <summary>
+    /// Optional custom filename to use instead of original
+    /// </summary>
+    [Parameter]
+    public string? CustomFileName { get; set; }
+
+    /// <summary>
+    /// If true, preserve original filename; if false, generate GUID filename (default: true)
+    /// </summary>
+    [Parameter]
+    public bool PreserveFilename { get; set; } = true;
+
+    /// <summary>
+    /// Callback when upload completes successfully
+    /// </summary>
+    [Parameter]
+    public EventCallback<string> OnUploadComplete { get; set; }
+
+    /// <summary>
+    /// Callback when upload fails
+    /// </summary>
+    [Parameter]
+    public EventCallback<string> OnUploadError { get; set; }
+
+    protected override void OnInitialized()
+    {
+        _selectedVersion = Version;
+    }
+
+    private void HandleFileSelected(InputFileChangeEventArgs e)
+    {
+        _selectedFile = e.File;
+        _statusMessage = null;
+        _uploadedFileUrl = null;
+        _isError = false;
+
+        // Validate file
+        var validationError = ValidateFile(_selectedFile);
+        if (!string.IsNullOrEmpty(validationError))
+        {
+            _statusMessage = validationError;
+            _isError = true;
+            _selectedFile = null;
+        }
+    }
+
+    private string? ValidateFile(IBrowserFile file)
+    {
+        // Check file size
+        if (file.Size > MaxFileSize)
+        {
+            return $"File size ({file.Size / 1024.0 / 1024.0:F2} MB) exceeds maximum allowed size ({MaxFileSize / 1024.0 / 1024.0:F2} MB)";
+        }
+
+        if (file.Size < MinFileSize)
+        {
+            return $"File size ({file.Size / 1024.0 / 1024.0:F2} MB) is below minimum required size ({MinFileSize / 1024.0 / 1024.0:F2} MB)";
+        }
+
+        // Check file extension
+        if (AllowedExtensions != null && AllowedExtensions.Length > 0)
+        {
+            var extension = Path.GetExtension(file.Name).ToLowerInvariant();
+            if (!AllowedExtensions.Any(ext => ext.ToLowerInvariant() == extension))
+            {
+                return $"File type '{extension}' is not allowed. Allowed types: {string.Join(", ", AllowedExtensions)}";
+            }
+        }
+
+        return null;
+    }
+
+    private async Task UploadFile()
+    {
+        if (_selectedFile == null) return;
+
+        _isUploading = true;
+        _statusMessage = null;
+        _uploadedFileUrl = null;
+        _isError = false;
+
+        try
+        {
+            if (_selectedVersion == UploadVersion.ServerUpload)
+            {
+                await UploadViaServer();
+            }
+            else
+            {
+                await UploadViaPresignedUrl();
+            }
+
+            if (!_isError && OnUploadComplete.HasDelegate)
+            {
+                await OnUploadComplete.InvokeAsync(_uploadedFileUrl);
+            }
+        }
+        catch (Exception ex)
+        {
+            _statusMessage = $"Error: {ex.Message}";
+            _isError = true;
+            Logger.LogError(ex, "Upload error");
+
+            if (OnUploadError.HasDelegate)
+            {
+                await OnUploadError.InvokeAsync(ex.Message);
+            }
+        }
+        finally
+        {
+            _isUploading = false;
+        }
+    }
+
+    private async Task UploadViaServer()
+    {
+        using var content = new MultipartFormDataContent();
+        var fileContent = new StreamContent(_selectedFile!.OpenReadStream(maxAllowedSize: MaxFileSize));
+        var contentType = string.IsNullOrEmpty(_selectedFile.ContentType) ? "application/octet-stream" : _selectedFile.ContentType;
+        fileContent.Headers.ContentType = new MediaTypeHeaderValue(contentType);
+
+        content.Add(fileContent, "file", _selectedFile.Name);
+
+        // Add folder, customFileName, and preserveFilename parameters
+        if (!string.IsNullOrEmpty(Folder))
+        {
+            content.Add(new StringContent(Folder), "folder");
+        }
+        if (!string.IsNullOrEmpty(CustomFileName))
+        {
+            content.Add(new StringContent(CustomFileName), "customFileName");
+        }
+        content.Add(new StringContent(PreserveFilename.ToString()), "preserveFilename");
+
+        var response = await Http.PostAsync(ServerUploadEndpoint, content);
+        var result = await response.Content.ReadFromJsonAsync<UploadResponse>();
+
+        if (response.IsSuccessStatusCode && result != null)
+        {
+            _statusMessage = result.Message;
+            _uploadedFileUrl = result.Url;
+        }
+        else
+        {
+            _statusMessage = result?.Error ?? "Upload failed";
+            _isError = true;
+        }
+    }
+
+    private async Task UploadViaPresignedUrl()
+    {
+        var contentType = string.IsNullOrEmpty(_selectedFile!.ContentType) ? "application/octet-stream" : _selectedFile.ContentType;
+
+        // Step 1: Get presigned URL from server
+        var presignedRequest = new
+        {
+            FileName = _selectedFile.Name,
+            ContentType = contentType,
+            Folder = Folder,
+            CustomFileName = CustomFileName,
+            PreserveFilename = (bool?)PreserveFilename
+        };
+        var response = await Http.PostAsJsonAsync(PresignedUrlEndpoint, presignedRequest);
+        var result = await response.Content.ReadFromJsonAsync<PresignedUrlResponse>();
+
+        if (!response.IsSuccessStatusCode || result == null)
+        {
+            _statusMessage = result?.Error ?? "Failed to get presigned URL";
+            _isError = true;
+            return;
+        }
+
+        // Step 2: Upload directly to S3 using presigned URL
+        // Note: S3 presigned URLs don't support chunked transfer encoding,
+        // so we need to read the file into memory first
+        using var httpClient = new HttpClient();
+        using var fileStream = _selectedFile.OpenReadStream(maxAllowedSize: MaxFileSize);
+        using var memoryStream = new MemoryStream();
+        await fileStream.CopyToAsync(memoryStream);
+        memoryStream.Position = 0;
+
+        var streamContent = new StreamContent(memoryStream);
+        streamContent.Headers.ContentType = new MediaTypeHeaderValue(contentType);
+        streamContent.Headers.ContentLength = memoryStream.Length;
+
+        var uploadResponse = await httpClient.PutAsync(result.PresignedUrl, streamContent);
+
+        if (uploadResponse.IsSuccessStatusCode)
+        {
+            // Get the public URL
+            _uploadedFileUrl = result.PublicUrl ?? result.PresignedUrl!.Split('?')[0];
+            _statusMessage = "File uploaded successfully";
+        }
+        else
+        {
+            var errorContent = await uploadResponse.Content.ReadAsStringAsync();
+            _statusMessage = $"Failed to upload to S3. Status: {uploadResponse.StatusCode}. Error: {errorContent}";
+            _isError = true;
+        }
+    }
+
+    private class UploadResponse
+    {
+        public string? Url { get; set; }
+        public string? Message { get; set; }
+        public string? Error { get; set; }
+    }
+
+    private class PresignedUrlResponse
+    {
+        public string? PresignedUrl { get; set; }
+        public string? Key { get; set; }
+        public string? PublicUrl { get; set; }
+        public string? Message { get; set; }
+        public string? Error { get; set; }
+    }
+
+    public enum UploadVersion
+    {
+        ServerUpload = 1,
+        DirectUpload = 2
+    }
+}
