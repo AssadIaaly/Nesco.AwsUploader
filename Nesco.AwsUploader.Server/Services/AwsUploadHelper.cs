@@ -151,6 +151,55 @@ public static class AwsUploadHelper
     }
 
     /// <summary>
+    /// Upload file to S3 using IAwsS3Service (server-side upload) with byte array content
+    /// </summary>
+    /// <param name="s3Service">AWS S3 Service instance</param>
+    /// <param name="fileContent">File content as byte array</param>
+    /// <param name="fileName">Name of the file</param>
+    /// <param name="contentType">Content type of the file (e.g., "image/png", "application/pdf")</param>
+    /// <param name="folder">Optional folder path in S3</param>
+    /// <param name="customFileName">Optional custom filename</param>
+    /// <param name="preserveFilename">If true, preserve original filename; if false, generate GUID</param>
+    /// <param name="maxFileSize">Maximum file size in bytes (default: 5MB)</param>
+    /// <returns>AwsUploadResult with upload status and details</returns>
+    public static async Task<AwsUploadResult> UploadFileAsync(
+        IAwsS3Service s3Service,
+        byte[] fileContent,
+        string fileName,
+        string contentType = "application/octet-stream",
+        string? folder = null,
+        string? customFileName = null,
+        bool preserveFilename = true,
+        long maxFileSize = 5242880)
+    {
+        try
+        {
+            // Validate file size
+            if (fileContent.Length > maxFileSize)
+            {
+                return AwsUploadResult.FailureResult(
+                    $"File size ({fileContent.Length / 1024.0 / 1024.0:F2} MB) exceeds maximum allowed size ({maxFileSize / 1024.0 / 1024.0:F2} MB)");
+            }
+
+            using var stream = new MemoryStream(fileContent);
+
+            var url = await s3Service.UploadFileAsync(
+                stream,
+                fileName,
+                contentType,
+                folder,
+                customFileName,
+                preserveFilename);
+
+            return AwsUploadResult.SuccessResult(url);
+        }
+        catch (Exception ex)
+        {
+            return AwsUploadResult.FailureResult(ex.Message);
+        }
+    }
+
+    /// <summary>
     /// Generate presigned URL for client-side upload
     /// </summary>
     /// <param name="s3Service">AWS S3 Service instance</param>

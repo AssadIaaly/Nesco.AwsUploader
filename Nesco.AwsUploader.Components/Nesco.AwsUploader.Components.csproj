@@ -8,13 +8,14 @@
         <!-- NuGet Package Properties -->
         <PackageId>Nesco.AwsUploader.Components</PackageId>
         <Version>1.0.0</Version>
-        <Authors>Nesco</Authors>
+        <Authors>Assad Iaaly</Authors>
         <Company>Nesco</Company>
         <Description>Blazor component for AWS S3 file uploads.</Description>
         <PackageTags>blazor;aws;s3;upload;component;razor</PackageTags>
         <PackageLicenseExpression>MIT</PackageLicenseExpression>
         <GeneratePackageOnBuild>true</GeneratePackageOnBuild>
         <PackageReadmeFile>README.md</PackageReadmeFile>
+        <PackageProjectUrl>https://github.com/AssadIaaly/Nesco.AwsUploader.git</PackageProjectUrl>
     </PropertyGroup>
 
     <ItemGroup>
@@ -23,6 +24,7 @@
 
     <ItemGroup>
         <PackageReference Include="Microsoft.AspNetCore.Components.Web" Version="9.0.9" />
+        <None Include="README.md" Pack="true" PackagePath="\" />
     </ItemGroup>
 
 </Project>
