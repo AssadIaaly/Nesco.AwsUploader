@@ -181,6 +181,65 @@ public class AwsS3Service : IAwsS3Service
         }
     }
 
+    public async Task<bool> DeleteFileAsync(string key)
+    {
+        try
+        {
+            var request = new DeleteObjectRequest
+            {
+                BucketName = _options.BucketName,
+                Key = key
+            };
+
+            await _s3Client.DeleteObjectAsync(request);
+            _logger.LogInformation("File deleted successfully from S3: {Key}", key);
+            return true;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error deleting file from S3: {Key}", key);
+            return false;
+        }
+    }
+
+    public async Task<(bool Success, string? Url)> CopyFileAsync(string sourceKey, string destinationKey)
+    {
+        try
+        {
+            _logger.LogInformation("Attempting to copy {SourceKey} to {DestinationKey}", sourceKey, destinationKey);
+
+            var request = new CopyObjectRequest
+            {
+                SourceBucket = _options.BucketName,
+                SourceKey = sourceKey,
+                DestinationBucket = _options.BucketName,
+                DestinationKey = destinationKey
+            };
+
+            var response = await _s3Client.CopyObjectAsync(request);
+            _logger.LogInformation("Copy successful. HTTP Status: {StatusCode}", response.HttpStatusCode);
+
+            // Generate URL for the copied file (consistent with UploadFileAsync)
+            string url;
+            if (_options.UsePublicUrls)
+            {
+                url = await GetPublicUrlAsync(destinationKey);
+            }
+            else
+            {
+                url = await GeneratePresignedDownloadUrlAsync(destinationKey, _options.PresignedUrlExpirationMinutes);
+            }
+
+            _logger.LogInformation("Generated URL for copied file: {Url}", url);
+            return (true, url);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error copying file in S3 from {SourceKey} to {DestinationKey}", sourceKey, destinationKey);
+            return (false, null);
+        }
+    }
+
     private static string SanitizeFileName(string fileName)
     {
         // Remove or replace invalid characters
