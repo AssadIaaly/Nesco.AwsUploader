@@ -7,10 +7,10 @@
 
         <!-- NuGet Package Properties -->
         <PackageId>Nesco.AwsUploader.Server</PackageId>
-        <Version>1.0.1</Version>
-        <Authors>Assad Iaaly</Authors>
+        <Version>1.0.2</Version>
+        <Authors>Nesco</Authors>
         <Company>Nesco</Company>
-        <Description>Server-side AWS S3 upload services and API endpoints for Blazor applications.</Description>
+        <Description>Server-side AWS S3 upload services and API endpoints for Blazor applications. Includes delete and copy operations.</Description>
         <PackageTags>blazor;aws;s3;upload;server;api</PackageTags>
         <PackageLicenseExpression>MIT</PackageLicenseExpression>
         <GeneratePackageOnBuild>true</GeneratePackageOnBuild>
@@ -27,6 +27,10 @@
         <PackageReference Include="Microsoft.Extensions.Configuration.Abstractions" Version="9.0.10" />
         <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" Version="9.0.10" />
         <PackageReference Include="Microsoft.Extensions.Options.ConfigurationExtensions" Version="9.0.10" />
+        <None Include="README.md" Pack="true" PackagePath="\" />
+    </ItemGroup>
+
+    <ItemGroup>
         <None Include="README.md" Pack="true" PackagePath="\" />
     </ItemGroup>
 

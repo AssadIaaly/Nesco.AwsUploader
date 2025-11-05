@@ -42,4 +42,19 @@ public interface IAwsS3Service
     /// <param name="key">S3 object key</param>
     /// <returns>Public URL</returns>
     Task<string> GetPublicUrlAsync(string key);
+
+    /// <summary>
+    /// Delete a file from S3
+    /// </summary>
+    /// <param name="key">S3 object key to delete</param>
+    /// <returns>True if deletion was successful</returns>
+    Task<bool> DeleteFileAsync(string key);
+
+    /// <summary>
+    /// Copy a file within S3
+    /// </summary>
+    /// <param name="sourceKey">Source S3 object key</param>
+    /// <param name="destinationKey">Destination S3 object key</param>
+    /// <returns>Tuple of (success status, URL of copied file)</returns>
+    Task<(bool Success, string? Url)> CopyFileAsync(string sourceKey, string destinationKey);
 }
